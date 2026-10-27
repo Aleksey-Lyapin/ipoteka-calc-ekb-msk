@@ -409,7 +409,8 @@
     // 0 — сегодня (ДДУ), '+12' — через 12 мес. после ДДУ, 'ГГГГ-ММ-ДД' — конкретная дата
     trancheSheets: [
       { sheet: 'Траншевая_Сбер', n: 3, dates: [0, '+12', '2028-11-30'] },
-      { sheet: 'Траншевая_Мск', n: 2, dates: [0, '2027-06-30'] }
+      // firstAmount — первый транш у программ с долей ≤ firstMinShare ставится ровно этой суммой (Бестселлер: 100 000 ₽, не 1%)
+      { sheet: 'Траншевая_Мск', n: 2, dates: [0, '2027-06-30'], firstAmount: 100000 }
     ],
     // Первый транш с долей не больше firstMinShare — не меньше firstMin ₽ (1%, но минимум 100 000 ₽)
     tranche: { firstMinShare: 0.01, firstMin: 100000 },
@@ -512,7 +513,7 @@
         var r1 = numx(r[3]) || 0, r2 = numx(r[4]);
         programs.push({
           projects: projectsOf(r[0]), type: String(r[1]).trim(), name: nameOf(r[2]),
-          tranche: r.slice(5, c).map(function (v) { return numx(v) || 0; }), tdates: ts.dates,
+          tranche: r.slice(5, c).map(function (v) { return numx(v) || 0; }), tdates: ts.dates, tfirst: ts.firstAmount,
           disc: numx(r[c]) || 0, // скидка задана в программе — скидка проекта и «Квартира месяца» не используются
           r1: r1, r2: r2 == null ? r1 : r2, grace: numx(r[c + 1]) || 0,
           minTerm: numx(r[c + 2]) || 0, term: numx(r[c + 3]) || 30,
@@ -626,7 +627,8 @@
       if (i === n - 1) a = left; // последний транш — остаток кредита
       else {
         a = round0(price * sh[i]);
-        if (i === 0 && sh[0] <= T.firstMinShare + 1e-9) a = Math.max(a, T.firstMin); // 1%, но не меньше 100 000 ₽
+        // 1%, но не меньше 100 000 ₽; если у листа задан firstAmount — ровно эта сумма (Бестселлер)
+        if (i === 0 && sh[0] <= T.firstMinShare + 1e-9) a = p.tfirst != null ? p.tfirst : Math.max(a, T.firstMin);
         a = Math.min(a, left);
       }
       amts.push(a); left -= a;
