@@ -440,8 +440,12 @@
     projectNames: { 'ДМД 1 оч.': 'Дом Милый дом 1 очередь', 'ДМД 2 оч.': 'Дом Милый дом 2 очередь', 'Алиса 1 оч.': 'ЖК Алиса', 'ДНК 1 оч.': 'ДНК. Дом на Куйбышева', 'Бестселлер': 'ЖК Бестселлер' },
     // Типы ипотеки, где все подходящие программы показываются сразу (без «Показать все программы»)
     showAllTypes: ['IT ипотека', 'Семейная ипотека', 'Комбо-ипотека', 'Траншевая ипотека'],
-    // Программы без скидки на квартиру (расчёт по базовой цене): часть названия + льготная ставка (null — любая)
-    noDiscountPrograms: [{ name: 'ипотека для всех на срок строительства (Совком)', r1: 0.044 }],
+    // Своя скидка на квартиру у программы, по проектам (вместо скидки проекта и «Квартиры месяца»):
+    // часть названия + льготная ставка (null — любая). Проекта нет в disc — обычная скидка
+    programDiscounts: [{
+      name: 'ипотека для всех на срок строительства (Совком)', r1: 0.044,
+      disc: { 'ДМД 1 оч.': 0.05, 'ДМД 2 оч.': 0.07, 'ДНК 1 оч.': 0.05, 'Алиса 1 оч.': 0.07, 'Бестселлер': 0.03 }
+    }],
     // Дополнительные листы программ (колонки A–O как у «Программы»): ЖК «Бестселлер» — лист «Программы_Мск»
     extraProgramSheets: ['Программы_Мск'],
     // Комбо-ипотека: листы с колонками A–P (Екатеринбург и ЖК «Бестселлер»)
@@ -698,11 +702,12 @@
   function bankOf(name) { var m = BANK_RE.exec(name); return m ? m[1].trim() : ''; }
   function progOf(name) { var m = BANK_RE.exec(name); return m ? name.slice(0, m.index).trim() : name; }
 
-  // Скидка на квартиру не действует (CONFIG.noDiscountPrograms): совпадает часть названия и льготная ставка
-  function noDiscProg(p) {
-    return (CONFIG.noDiscountPrograms || []).some(function (m) {
+  // Своя скидка программы в проекте (CONFIG.programDiscounts): совпадает часть названия и льготная ставка; нет правила — null
+  function progDiscount(p, project) {
+    var m = (CONFIG.programDiscounts || []).filter(function (m) {
       return p.name.toLowerCase().indexOf(m.name.toLowerCase()) >= 0 && (m.r1 == null || Math.abs(p.r1 - m.r1) < 1e-9);
-    });
+    })[0];
+    return m && m.disc[project] != null ? m.disc[project] : null;
   }
 
   function compute(D, inp) {
@@ -733,10 +738,10 @@
       var sub0 = subBase(BT - pv0) * sub;
       var subp = base > 0 ? sub0 / base : 0;
       // шаг 2 — итоговая цена с порогом скидки
-      // Траншевая — скидка из листа программы; программы из CONFIG.noDiscountPrograms — без скидки;
+      // Программы из CONFIG.programDiscounts — своя скидка проекта; траншевая — скидка из листа программы;
       // остальные — скидка проекта (или «Квартиры месяца»)
-      var noDiscP = noDiscProg(p);
-      var pdisc = noDiscP ? 0 : p.disc != null ? p.disc : inp.disc;
+      var pdOwn = progDiscount(p, inp.project);
+      var pdisc = pdOwn != null ? pdOwn : p.disc != null ? p.disc : inp.disc;
       // Субсидированная программа в проектах subsidyNoDiscountProjects (Бестселлер) — без скидки на квартиру
       var noDisc = CONFIG.subsidyNoDiscountProjects.indexOf(inp.project) >= 0 && sub > 0;
       var discIn = noDisc ? 0 : pdisc;
@@ -779,7 +784,9 @@
         : pv > pvIn + 0.5 ? (pvIn === 0 ? 'Взят минимальный ПВ' : 'ПВ увеличен до минимума')
         : (inp.term != null && inp.term > term) ? 'Срок снижен до максимального'
         : (inp.term != null && inp.term < term) ? 'Срок увеличен до минимального' : '';
-      if ((noDisc || noDiscP) && inp.disc > 0 && status === OK) note = 'Скидка на квартиру по этой программе не действует' + (note ? '. ' + note : '');
+      if (noDisc && inp.disc > 0 && status === OK) note = 'Скидка на квартиру по этой программе не действует' + (note ? '. ' + note : '');
+      else if (pdOwn != null && Math.abs(pdOwn - inp.disc) > 1e-9 && status === OK)
+        note = 'Скидка на квартиру по этой программе — ' + pct1(pdOwn) + (note ? '. ' + note : '');
       return {
         n: i + 1, name: fam ? p.name + ' — ' + inp.kids : p.name, r1: r1, r2: r2, gm: gm, term: term, mpv: mpv, lim: lim, maxPv: p.maxPv,
         // Для таблицы: банк — из скобок в конце названия «… (Альфа)», название — без скобок (банк не указан — «—»)
